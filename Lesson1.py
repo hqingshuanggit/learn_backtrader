@@ -25,7 +25,7 @@ for stock in daily_price['sec_code'].unique():
     # print(data_.dtypes)
     # 缺失值处理：日期对齐时会使得有些交易日的数据为空，所以需要对缺失数据进行填充
     data_.loc[:, ['volume', 'openinterest']] = data_.loc[:, ['volume', 'openinterest']].fillna(0)
-    data_.loc[:, ['open', 'high', 'low', 'close']] = data_.loc[:, ['open', 'high', 'low', 'close']].fillna(method='pad')
+    data_.loc[:, ['open', 'high', 'low', 'close']] = data_.loc[:, ['open', 'high', 'low', 'close']].ffill()
     data_.loc[:, ['open', 'high', 'low', 'close']] = data_.loc[:, ['open', 'high', 'low', 'close']].fillna(0)
     # 导入数据
     datafeed = bt.feeds.PandasData(dataname=data_, fromdate=datetime.datetime(2019, 1, 2),
