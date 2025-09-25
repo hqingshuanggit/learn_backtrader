@@ -6,7 +6,7 @@ import backtrader as bt
 import pandas as pd
 import datetime
 
-# 实例化 cerebro
+# 实例化 cerebro，cerebro
 cerebro = bt.Cerebro()
 
 daily_price = pd.read_csv("Data/daily_price.csv", parse_dates=['datetime'])
@@ -72,7 +72,7 @@ class TestStrategy(bt.Strategy):
                 for stock in sell_stock:
                     data = self.getdatabyname(stock)
                     if self.getposition(data).size > 0:
-                        od = self.close(data=data)
+                        od = self.close(data=data)  # self.close() 平仓
                         self.order_list.append(od)  # 记录卖出订单
             # 买入此次调仓的股票：多退少补原则
             print("-----------买入此次调仓期的股票--------------")
