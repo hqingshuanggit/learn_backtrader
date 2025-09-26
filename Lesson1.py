@@ -1,30 +1,35 @@
 # Lesson1：Backtrader来啦
 # link: https://mp.weixin.qq.com/s/7S4AnbUfQy2kCZhuFN1dZw
 
-#%%
+# %%
 import backtrader as bt
 import pandas as pd
 import datetime
 
-# 实例化 cerebro，cerebro
+# 实例化 cerebro
 cerebro = bt.Cerebro()
 
 daily_price = pd.read_csv("Data/daily_price.csv", parse_dates=['datetime'])
 trade_info = pd.read_csv("Data/trade_info.csv", parse_dates=['trade_date'])
 
-#%%
+# %%
 
 # 按股票代码，依次循环传入数据
 for stock in daily_price['sec_code'].unique():
-    # 日期对齐
+    # 从原始数据daily_price中提取所有唯一交易日，生成一个仅含datetime列的基准DataFrame。
     data = pd.DataFrame(daily_price['datetime'].unique(), columns=['datetime'])  # 获取回测区间内所有交易日
+    # 从daily_price中筛选出指定股票的数据，并保留核心字段
     df = daily_price.query(f"sec_code=='{stock}'")[
         ['datetime', 'open', 'high', 'low', 'close', 'volume', 'openinterest']]
+    # 将所有交易日基准（data_）与特定股票数据（df）进行左连接（how='left'），基于datetime列对齐
+    # 左连接会保留data中的所有日期（即使df中没有对应数据）
     data_ = pd.merge(data, df, how='left', on='datetime')
     data_ = data_.set_index("datetime")
-    # print(data_.dtypes)
+
     # 缺失值处理：日期对齐时会使得有些交易日的数据为空，所以需要对缺失数据进行填充
+    # 处理成交量（volume）和持仓量（openinterest）：缺失值填0
     data_.loc[:, ['volume', 'openinterest']] = data_.loc[:, ['volume', 'openinterest']].fillna(0)
+    # 处理价格列（open/high/low/close）：先向前填充（ffill），再填0
     data_.loc[:, ['open', 'high', 'low', 'close']] = data_.loc[:, ['open', 'high', 'low', 'close']].ffill()
     data_.loc[:, ['open', 'high', 'low', 'close']] = data_.loc[:, ['open', 'high', 'low', 'close']].fillna(0)
     # 导入数据
@@ -35,15 +40,19 @@ for stock in daily_price['sec_code'].unique():
 
 print("All stock Done !")
 
-#%%
+
+# %%
 
 # 回测策略
 class TestStrategy(bt.Strategy):
-    '''选股策略'''
-    params = (('maperiod', 15),
-              ('printlog', False),)
+    """选股策略"""
+    params = (
+        ('maperiod', 15),
+        ('printlog', False),  # 最后一个“,”最好别删！
+    )
 
     def __init__(self):
+        """必选，初始化属性、计算指标等"""
         self.buy_stock = trade_info  # 保留调仓列表
         # 读取调仓日期，即每月的最后一个交易日，回测时，会在这一天下单，然后在下一个交易日，以开盘价买入
         self.trade_dates = pd.to_datetime(self.buy_stock['trade_date'].unique()).tolist()
@@ -51,6 +60,8 @@ class TestStrategy(bt.Strategy):
         self.buy_stocks_pre = []  # 记录上一期持仓
 
     def next(self):
+        """必选，编写交易策略逻辑"""
+
         dt = self.datas[0].datetime.date(0)  # 获取当前的回测时间点
         # 如果是调仓日，则进行调仓操作
         if dt in self.trade_dates:
@@ -64,6 +75,7 @@ class TestStrategy(bt.Strategy):
             buy_stocks_data = self.buy_stock.query(f"trade_date=='{dt}'")
             long_list = buy_stocks_data['sec_code'].tolist()
             print('long_list', long_list)  # 打印持仓列表
+
             # 对现有持仓中，调仓后不再继续持有的股票进行卖出平仓
             sell_stock = [i for i in self.buy_stocks_pre if i not in long_list]
             print('sell_stock', sell_stock)  # 打印平仓列表
@@ -74,6 +86,7 @@ class TestStrategy(bt.Strategy):
                     if self.getposition(data).size > 0:
                         od = self.close(data=data)  # self.close() 平仓
                         self.order_list.append(od)  # 记录卖出订单
+
             # 买入此次调仓的股票：多退少补原则
             print("-----------买入此次调仓期的股票--------------")
             for stock in long_list:
@@ -87,11 +100,14 @@ class TestStrategy(bt.Strategy):
         # 交易记录日志（可省略，默认不输出结果）
 
     def log(self, txt, dt=None, doprint=False):
+        """可选，构建策略打印日志的函数：可用于打印订单记录或交易记录等"""
         if self.params.printlog or doprint:
             dt = dt or self.datas[0].datetime.date(0)
             print(f'{dt.isoformat()},{txt}')
 
     def notify_order(self, order):
+        """可选，打印订单信息"""
+
         # 未被处理的订单
         if order.status in [order.Submitted, order.Accepted]:
             return
@@ -123,6 +139,7 @@ cerebro.broker.setcommission(commission=0.0003)
 # 滑点：双边各 0.0001
 cerebro.broker.set_slippage_perc(perc=0.005)
 
+# 添加分析器（cerebro.addanalyzer()，如夏普比率、最大回撤）
 cerebro.addanalyzer(bt.analyzers.TimeReturn, _name='pnl')  # 返回收益率时序数据
 cerebro.addanalyzer(bt.analyzers.AnnualReturn, _name='_AnnualReturn')  # 年化收益率
 cerebro.addanalyzer(bt.analyzers.SharpeRatio, _name='_SharpeRatio')  # 夏普比率
@@ -133,10 +150,15 @@ cerebro.addstrategy(TestStrategy, printlog=True)
 
 # 启动回测
 result = cerebro.run()
-# 从返回的 result 中提取回测结果
+"""cerebro.run()返回一个结果列表（list），每个元素对应一个策略实例的回测结果（若添加了多个策略）。每个结果对象包含：
+- 策略实例（strategy）。
+- 分析器结果（analyzers，如 sharpe、drawdown）。
+- 经纪商最终状态（broker，如最终现金、总资产）"""
 strat = result[0]
 # 返回日度收益率序列
 daily_return = pd.Series(strat.analyzers.pnl.get_analysis())
+# 可视化回测结果
+cerebro.plot()
 # 打印评价指标
 print("--------------- AnnualReturn -----------------")
 print(strat.analyzers._AnnualReturn.get_analysis())
@@ -144,5 +166,3 @@ print("--------------- SharpeRatio -----------------")
 print(strat.analyzers._SharpeRatio.get_analysis())
 print("--------------- DrawDown -----------------")
 print(strat.analyzers._DrawDown.get_analysis())
-
-
